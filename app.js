@@ -14,7 +14,14 @@ const paletteSize = document.getElementById('paletteSize');
 const saturation = document.getElementById('saturation');
 const contrast = document.getElementById('contrast');
 const showGrid = document.getElementById('showGrid');
+const showCodes = document.getElementById('showCodes');
+const mirrorPattern = document.getElementById('mirrorPattern');
 const preserveEdges = document.getElementById('preserveEdges');
+const colorSourceSelect = document.getElementById('colorSourceSelect');
+const colorTargetSelect = document.getElementById('colorTargetSelect');
+const applyColorSwapBtn = document.getElementById('applyColorSwap');
+const resetColorSwapBtn = document.getElementById('resetColorSwap');
+const overrideBadges = document.getElementById('overrideBadges');
 const regenerateBtn = document.getElementById('regenerateBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 const summaryText = document.getElementById('summaryText');
@@ -26,14 +33,16 @@ const saturationValue = document.getElementById('saturationValue');
 const contrastValue = document.getElementById('contrastValue');
 
 const STORAGE_KEY = 'peweb-access-token';
+const overridesStorageKey = 'peweb-color-overrides';
 const state = {
   passwordHash: null,
   bootstrapped: false,
+  overrides: new Map(),
 };
 
 const beads = {
-  2: { sizeMm: 2, defaultWidth: 96, spacing: 1 },
-  5: { sizeMm: 5, defaultWidth: 48, spacing: 2 },
+  2: { sizeMm: 2, defaultWidth: 120 },
+  5: { sizeMm: 5, defaultWidth: 72 },
 };
 
 const palette = [
@@ -61,7 +70,19 @@ const palette = [
   { id: 'C22', name: '暗红', hex: '#991b1b' },
   { id: 'C23', name: '银灰', hex: '#9ca3af' },
   { id: 'C24', name: '嫩黄', hex: '#fef08a' },
+  { id: 'C25', name: '深紫', hex: '#6b21a8' },
+  { id: 'C26', name: '森林绿', hex: '#166534' },
+  { id: 'C27', name: '薄荷绿', hex: '#86efac' },
+  { id: 'C28', name: '珊瑚粉', hex: '#fb7185' },
+  { id: 'C29', name: '天光蓝', hex: '#0ea5e9' },
+  { id: 'C30', name: '深咖', hex: '#4b2e2a' },
+  { id: 'C31', name: '亮紫', hex: '#a855f7' },
+  { id: 'C32', name: '晨雾', hex: '#cbd5f5' },
 ];
+
+const paletteMap = new Map(
+  palette.map((entry) => [entry.id, { ...entry, rgb: hexToRgb(entry.hex), lab: rgbToLab(hexToRgb(entry.hex)) }])
+);
 
 let imageBitmap = null;
 let workingImage = null;
@@ -104,8 +125,6 @@ function rgbToLab({ r, g, b }) {
   };
 }
 
-const paletteWithLab = palette.map((item) => ({ ...item, rgb: hexToRgb(item.hex), lab: rgbToLab(hexToRgb(item.hex)) }));
-
 function deltaE(labA, labB) {
   const dl = labA.l - labB.l;
   const da = labA.a - labB.a;
@@ -119,7 +138,109 @@ function applyTone(value, sat, con) {
 }
 
 function buildPalette(size) {
-  return paletteWithLab.slice(0, size);
+  return palette.slice(0, size).map((item) => paletteMap.get(item.id));
+}
+
+function getContrastColor(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 150 ? '#1f2937' : '#f8fafc';
+}
+
+function setCanvasResolution(cellsWide, cellsHigh) {
+  const baseCell = 38;
+  const width = Math.max(2200, cellsWide * baseCell + 400);
+  const height = Math.max(2600, cellsHigh * baseCell + 720);
+  outputCanvas.width = width;
+  outputCanvas.height = height;
+}
+
+function populateColorSelectors() {
+  const fragmentSource = document.createDocumentFragment();
+  const fragmentTarget = document.createDocumentFragment();
+  palette.forEach((item) => {
+    const optionSource = document.createElement('option');
+    optionSource.value = item.id;
+    optionSource.textContent = `${item.id} · ${item.name}`;
+    fragmentSource.appendChild(optionSource);
+
+    const optionTarget = document.createElement('option');
+    optionTarget.value = item.id;
+    optionTarget.textContent = `${item.id} · ${item.name}`;
+    fragmentTarget.appendChild(optionTarget);
+  });
+  colorSourceSelect.innerHTML = '<option value="">选择原色号</option>';
+  colorTargetSelect.innerHTML = '<option value="">替换为色号</option>';
+  colorSourceSelect.appendChild(fragmentSource);
+  colorTargetSelect.appendChild(fragmentTarget);
+}
+
+function loadStoredOverrides() {
+  try {
+    const stored = localStorage.getItem(overridesStorageKey);
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return;
+    parsed.forEach(([sourceId, targetId]) => {
+      if (paletteMap.has(sourceId) && paletteMap.has(targetId)) {
+        state.overrides.set(sourceId, paletteMap.get(targetId));
+      }
+    });
+  } catch (error) {
+    console.warn('Failed to load overrides', error);
+  }
+}
+
+function persistOverrides() {
+  const pairs = Array.from(state.overrides.entries()).map(([sourceId, target]) => [sourceId, target.id]);
+  localStorage.setItem(overridesStorageKey, JSON.stringify(pairs));
+}
+
+function renderOverrideBadges(grid) {
+  overrideBadges.innerHTML = '';
+  if (state.overrides.size === 0) return;
+  const fragment = document.createDocumentFragment();
+  state.overrides.forEach((target, sourceId) => {
+    const sourceEntry = paletteMap.get(sourceId);
+    if (!sourceEntry || !target) return;
+    const count = grid?.originalCounts?.get(sourceId) ?? 0;
+    const badge = document.createElement('span');
+    badge.className = 'override-badge';
+    badge.dataset.source = sourceId;
+    badge.innerHTML = `
+      <span class="override-badge__swatch" style="background:${target.hex}"></span>
+      <strong>${sourceId} → ${target.id}</strong>
+      <span>${target.name}</span>
+      <span>${count} 格</span>
+      <button type="button" aria-label="移除替换">×</button>
+    `;
+    fragment.appendChild(badge);
+  });
+  overrideBadges.appendChild(fragment);
+}
+
+function resizeContainCanvas(ctx, image, targetWidth, targetHeight) {
+  ctx.clearRect(0, 0, targetWidth, targetHeight);
+  const ratio = Math.min(targetWidth / image.width, targetHeight / image.height);
+  const drawWidth = image.width * ratio;
+  const drawHeight = image.height * ratio;
+  const offsetX = (targetWidth - drawWidth) / 2;
+  const offsetY = (targetHeight - drawHeight) / 2;
+  ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+}
+
+function drawSourcePreview(image) {
+  sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+  sourceCtx.fillStyle = '#fff';
+  sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+  resizeContainCanvas(sourceCtx, image, sourceCanvas.width, sourceCanvas.height);
+}
+
+function updateSliderLabels() {
+  gridWidthValue.textContent = `${gridWidth.value} 格`;
+  paletteSizeValue.textContent = `${paletteSize.value} 色`;
+  saturationValue.textContent = Number(saturation.value).toFixed(2);
+  contrastValue.textContent = Number(contrast.value).toFixed(2);
 }
 
 function sampleImageData(image, cellsWide) {
@@ -153,34 +274,29 @@ function generateGrid(image, cellsWide) {
   const { offscreen, cellsHigh } = sampleImageData(image, cellsWide);
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
   const data = ctx.getImageData(0, 0, cellsWide, cellsHigh).data;
-  const pixels = [];
+  const pixels = Array.from({ length: cellsHigh }, () => new Array(cellsWide));
   const counts = new Map();
+  const originalCounts = new Map();
   const sat = Number(saturation.value);
-  const baseContrast = Number(contrast.value);
-  const edgeBoost = preserveEdges.checked ? 1.08 : 1;
-  const con = baseContrast * edgeBoost;
+  const con = Number(contrast.value) * (preserveEdges.checked ? 1.12 : 1);
 
   for (let y = 0; y < cellsHigh; y += 1) {
-    const row = [];
     for (let x = 0; x < cellsWide; x += 1) {
       const index = (y * cellsWide + x) * 4;
-      let r = data[index];
-      let g = data[index + 1];
-      let b = data[index + 2];
-
-      r = applyTone(r, sat, con);
-      g = applyTone(g, sat, con);
-      b = applyTone(b, sat, con);
-
+      const r = applyTone(data[index], sat, con);
+      const g = applyTone(data[index + 1], sat, con);
+      const b = applyTone(data[index + 2], sat, con);
       const chosen = nearestPaletteColor({ r, g, b }, swatches);
-      const key = chosen.id;
-      counts.set(key, (counts.get(key) || 0) + 1);
-      row.push(chosen);
+      originalCounts.set(chosen.id, (originalCounts.get(chosen.id) || 0) + 1);
+      const overrideTarget = state.overrides.get(chosen.id);
+      const effective = overrideTarget ?? chosen;
+      const drawX = mirrorPattern.checked ? cellsWide - x - 1 : x;
+      pixels[y][drawX] = effective;
+      counts.set(effective.id, (counts.get(effective.id) || 0) + 1);
     }
-    pixels.push(row);
   }
 
-  return { pixels, cellsWide, cellsHigh, counts, swatches };
+  return { pixels, cellsWide, cellsHigh, counts, originalCounts };
 }
 
 function renderMiniPreview(grid) {
@@ -193,13 +309,23 @@ function renderMiniPreview(grid) {
   const cell = Math.floor(Math.min(width / cellsWide, height / cellsHigh));
   const offsetX = Math.floor((width - cell * cellsWide) / 2);
   const offsetY = Math.floor((height - cell * cellsHigh) / 2);
+  const fontSize = Math.max(10, Math.floor(cell * 0.4));
+  previewCtx.font = `${fontSize}px "Inter", sans-serif`;
+  previewCtx.textAlign = 'center';
+  previewCtx.textBaseline = 'middle';
 
   for (let y = 0; y < cellsHigh; y += 1) {
     for (let x = 0; x < cellsWide; x += 1) {
-      previewCtx.fillStyle = pixels[y][x].hex;
+      const color = pixels[y][x];
+      previewCtx.fillStyle = color.hex;
       previewCtx.fillRect(offsetX + x * cell, offsetY + y * cell, cell, cell);
+      if (showCodes.checked && cell >= 12) {
+        previewCtx.fillStyle = getContrastColor(color.hex);
+        previewCtx.fillText(color.id, offsetX + x * cell + cell / 2, offsetY + y * cell + cell / 2);
+      }
     }
   }
+
   if (showGrid.checked) {
     previewCtx.strokeStyle = 'rgba(15, 23, 42, 0.12)';
     previewCtx.lineWidth = 1;
@@ -218,39 +344,80 @@ function renderMiniPreview(grid) {
   }
 }
 
+function renderLegend(grid) {
+  colorStats.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  const total = Array.from(grid.counts.values()).reduce((acc, value) => acc + value, 0) || 1;
+  const entries = [...grid.counts.entries()].sort((a, b) => b[1] - a[1]);
+  entries.forEach(([id, count]) => {
+    const entry = paletteMap.get(id);
+    if (!entry) return;
+    const card = document.createElement('div');
+    card.className = 'stat-card';
+    const ratio = ((count / total) * 100).toFixed(1);
+    card.innerHTML = `
+      <strong>
+        <span class="swatch" style="background:${entry.hex}"></span>
+        ${entry.id} · ${entry.name}
+      </strong>
+      <span>${count} 颗（${ratio}%）</span>
+      <em>${entry.hex.toUpperCase()}</em>
+    `;
+    fragment.appendChild(card);
+  });
+  colorStats.appendChild(fragment);
+}
+
 function renderOutput(grid) {
   const { pixels, cellsWide, cellsHigh, counts } = grid;
+  setCanvasResolution(cellsWide, cellsHigh);
   const width = outputCanvas.width;
   const height = outputCanvas.height;
   outputCtx.clearRect(0, 0, width, height);
   outputCtx.fillStyle = '#fffdf8';
   outputCtx.fillRect(0, 0, width, height);
 
-  const padding = 72;
-  const innerWidth = width - padding * 2;
-  const innerHeight = height - padding * 2 - 130;
+  const paddingX = 180;
+  const paddingTop = 150;
+  const paddingBottom = 520;
+  const innerWidth = width - paddingX * 2;
+  const innerHeight = height - paddingTop - paddingBottom;
   const cell = Math.floor(Math.min(innerWidth / cellsWide, innerHeight / cellsHigh));
   const drawWidth = cell * cellsWide;
   const drawHeight = cell * cellsHigh;
   const offsetX = Math.floor((width - drawWidth) / 2);
-  const offsetY = Math.floor((height - drawHeight) / 2) - 30;
+  const offsetY = paddingTop;
 
   outputCtx.fillStyle = '#0f172a';
-  outputCtx.font = '700 28px Inter, sans-serif';
-  outputCtx.fillText('拼豆图纸', padding, 48);
-  outputCtx.font = '400 16px Inter, sans-serif';
+  outputCtx.font = '700 58px Inter, sans-serif';
+  outputCtx.fillText('拼豆图纸', paddingX, 96);
+  outputCtx.font = '400 28px Inter, sans-serif';
   outputCtx.fillStyle = '#64748b';
-  outputCtx.fillText(`尺寸：${cellsWide} × ${cellsHigh} 格`, padding, 78);
+  const mirrorLabel = mirrorPattern.checked ? ' · 已镜像' : '';
+  outputCtx.fillText(`尺寸：${cellsWide} × ${cellsHigh} 格${mirrorLabel}`, paddingX, 138);
+  outputCtx.fillText(`色号数量：${counts.size} 种`, paddingX, 174);
+
+  const codeFontSize = Math.max(18, Math.floor(cell * 0.44));
+  outputCtx.font = `${codeFontSize}px "Inter", sans-serif`;
+  outputCtx.textAlign = 'center';
+  outputCtx.textBaseline = 'middle';
 
   for (let y = 0; y < cellsHigh; y += 1) {
     for (let x = 0; x < cellsWide; x += 1) {
-      outputCtx.fillStyle = pixels[y][x].hex;
-      outputCtx.fillRect(offsetX + x * cell, offsetY + y * cell, cell, cell);
+      const color = pixels[y][x];
+      const posX = offsetX + x * cell;
+      const posY = offsetY + y * cell;
+      outputCtx.fillStyle = color.hex;
+      outputCtx.fillRect(posX, posY, cell, cell);
+      if (showCodes.checked && cell >= 24) {
+        outputCtx.fillStyle = getContrastColor(color.hex);
+        outputCtx.fillText(color.id, posX + cell / 2, posY + cell / 2 + 1);
+      }
     }
   }
 
   if (showGrid.checked) {
-    outputCtx.strokeStyle = 'rgba(15, 23, 42, 0.18)';
+    outputCtx.strokeStyle = 'rgba(15, 23, 42, 0.22)';
     outputCtx.lineWidth = 1;
     for (let x = 0; x <= cellsWide; x += 1) {
       outputCtx.beginPath();
@@ -266,51 +433,16 @@ function renderOutput(grid) {
     }
 
     outputCtx.fillStyle = '#334155';
-    outputCtx.font = '600 12px Inter, sans-serif';
-    for (let x = 0; x < cellsWide; x += 4) {
-      outputCtx.fillText(String(x + 1), offsetX + x * cell + 2, offsetY - 8);
+    outputCtx.font = '600 20px Inter, sans-serif';
+    for (let x = 0; x < cellsWide; x += 5) {
+      outputCtx.fillText(String(x + 1), offsetX + x * cell + cell / 2, offsetY - 18);
     }
-    for (let y = 0; y < cellsHigh; y += 4) {
-      outputCtx.fillText(String(y + 1), 18, offsetY + y * cell + 12);
+    for (let y = 0; y < cellsHigh; y += 5) {
+      outputCtx.fillText(String(y + 1), offsetX - 24, offsetY + y * cell + cell / 2);
     }
   }
 
-  const legendY = offsetY + drawHeight + 52;
-  outputCtx.fillStyle = '#0f172a';
-  outputCtx.font = '700 18px Inter, sans-serif';
-  outputCtx.fillText('颜色统计', padding, legendY);
-
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const legendRows = sorted.slice(0, 10);
-  colorStats.innerHTML = '';
-  legendRows.forEach(([id, count]) => {
-    const item = paletteWithLab.find((entry) => entry.id === id);
-    const card = document.createElement('div');
-    card.className = 'stat-card';
-    card.innerHTML = `<strong><span style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${item.hex};margin-right:6px;vertical-align:middle"></span>${item.id} ${item.name}</strong><span>${count} 颗</span>`;
-    colorStats.appendChild(card);
-  });
-
-  if (sorted.length > 0) {
-    const top = sorted[0];
-    const topItem = paletteWithLab.find((entry) => entry.id === top[0]);
-    summaryText.textContent = `已生成 ${cellsWide} × ${cellsHigh} 格图纸，主色为 ${topItem.name}，共使用 ${sorted.length} 种拼豆色。`;
-  }
-  scaleChip.textContent = `${cellsWide} × ${cellsHigh}`;
-}
-
-function drawSourcePreview(image) {
-  sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-  sourceCtx.fillStyle = '#fff';
-  sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-  sourceCtx.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
-}
-
-function updateSliderLabels() {
-  gridWidthValue.textContent = `${gridWidth.value} 格`;
-  paletteSizeValue.textContent = `${paletteSize.value} 色`;
-  saturationValue.textContent = Number(saturation.value).toFixed(2);
-  contrastValue.textContent = Number(contrast.value).toFixed(2);
+  renderLegend(grid);
 }
 
 function setWorkingImage(image) {
@@ -326,16 +458,22 @@ function regenerate() {
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
     summaryText.textContent = '等待上传图片。';
+    scaleChip.textContent = '- × -';
     colorStats.innerHTML = '';
-    scaleChip.textContent = `${gridWidth.value} × ${gridWidth.value}`;
+    renderOverrideBadges();
     return;
   }
   updateSliderLabels();
-  const grid = generateGrid(workingImage, Number(gridWidth.value));
+  const targetCells = Number(gridWidth.value) || beads[beadSize.value].defaultWidth;
+  const grid = generateGrid(workingImage, targetCells);
   currentGrid = grid;
   colorCount = grid.counts.size;
+  scaleChip.textContent = `${grid.cellsWide} × ${grid.cellsHigh}`;
   renderMiniPreview(grid);
   renderOutput(grid);
+  const total = [...grid.counts.values()].reduce((acc, value) => acc + value, 0);
+  summaryText.textContent = `已生成 ${grid.cellsWide} × ${grid.cellsHigh} 格超清拼豆图，使用 ${colorCount} 种色号，共 ${total} 颗拼豆。`;
+  renderOverrideBadges(grid);
 }
 
 function handleFile(file) {
@@ -368,18 +506,63 @@ dropzone.addEventListener('drop', (event) => {
   handleFile(file);
 });
 
-[gridWidth, paletteSize, saturation, contrast, beadSize, showGrid, preserveEdges].forEach((control) => {
+[gridWidth, paletteSize, saturation, contrast, beadSize, showGrid, showCodes, mirrorPattern, preserveEdges].forEach((control) => {
   control.addEventListener('input', () => {
     updateSliderLabels();
     if (workingImage) regenerate();
   });
 });
 
+applyColorSwapBtn.addEventListener('click', () => {
+  const sourceId = colorSourceSelect.value;
+  const targetId = colorTargetSelect.value;
+  if (!sourceId || !targetId) {
+    setFeedback('请选择需要替换的色号。', true);
+    return;
+  }
+  if (sourceId === targetId) {
+    setFeedback('原色号与新色号相同，无需替换。', true);
+    return;
+  }
+  const target = paletteMap.get(targetId);
+  if (!target) {
+    setFeedback('色号不存在，请检查。', true);
+    return;
+  }
+  state.overrides.set(sourceId, target);
+  persistOverrides();
+  setFeedback(`已将 ${sourceId} 替换为 ${target.id}。`);
+  if (workingImage) regenerate();
+});
+
+resetColorSwapBtn.addEventListener('click', () => {
+  if (state.overrides.size === 0) return;
+  state.overrides.clear();
+  persistOverrides();
+  setFeedback('已清空所有色号替换。');
+  if (workingImage) regenerate();
+});
+
+overrideBadges.addEventListener('click', (event) => {
+  const button = event.target.closest('button');
+  if (!button) return;
+  const badge = button.closest('.override-badge');
+  if (!badge) return;
+  const sourceId = badge.dataset.source;
+  if (!sourceId) return;
+  state.overrides.delete(sourceId);
+  persistOverrides();
+  setFeedback(`已移除 ${sourceId} 的替换。`);
+  if (workingImage) regenerate();
+});
+
 regenerateBtn.addEventListener('click', regenerate);
 downloadBtn.addEventListener('click', () => {
   if (!currentGrid) return;
   const link = document.createElement('a');
-  link.download = 'pebeads-pattern.png';
+  const date = new Date();
+  const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  link.download = `pebeads-pattern-${stamp}.png`;
   link.href = outputCanvas.toDataURL('image/png');
   link.click();
 });
@@ -388,23 +571,23 @@ function createDemoImage() {
   const demo = document.createElement('canvas');
   demo.width = 960;
   demo.height = 720;
-  const demoCtx = demo.getContext('2d');
-  const gradient = demoCtx.createLinearGradient(0, 0, demo.width, demo.height);
+  const ctx = demo.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, demo.width, demo.height);
   gradient.addColorStop(0, '#ef4444');
   gradient.addColorStop(0.3, '#f59e0b');
   gradient.addColorStop(0.55, '#22c55e');
   gradient.addColorStop(0.82, '#3b82f6');
   gradient.addColorStop(1, '#8b5cf6');
-  demoCtx.fillStyle = gradient;
-  demoCtx.fillRect(0, 0, demo.width, demo.height);
-  demoCtx.fillStyle = 'rgba(255,255,255,0.92)';
-  demoCtx.beginPath();
-  demoCtx.arc(760, 180, 120, 0, Math.PI * 2);
-  demoCtx.fill();
-  demoCtx.fillStyle = '#111827';
-  demoCtx.font = 'bold 72px sans-serif';
-  demoCtx.fillText('Pe', 120, 220);
-  demoCtx.fillText('Web', 120, 300);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, demo.width, demo.height);
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.arc(760, 180, 120, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#111827';
+  ctx.font = 'bold 72px sans-serif';
+  ctx.fillText('Pe', 120, 220);
+  ctx.fillText('Web', 120, 300);
   const demoImage = new Image();
   demoImage.src = demo.toDataURL('image/png');
   return demoImage;
@@ -413,6 +596,9 @@ function createDemoImage() {
 function bootstrapApp() {
   if (state.bootstrapped) return;
   state.bootstrapped = true;
+  populateColorSelectors();
+  loadStoredOverrides();
+  renderOverrideBadges();
   updateSliderLabels();
   summaryText.textContent = '等待上传图片。';
   previewCtx.fillStyle = '#ffffff';

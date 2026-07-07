@@ -69,27 +69,49 @@
           </div>
           <div class="control-group">
             <label for="gridWidth">图纸宽度（格）<span id="gridWidthValue"></span></label>
-            <input id="gridWidth" type="range" min="24" max="128" step="1" value="48" />
+            <input id="gridWidth" type="range" min="24" max="160" step="1" value="64" />
           </div>
           <div class="control-group">
             <label for="paletteSize">颜色数量<span id="paletteSizeValue"></span></label>
-            <input id="paletteSize" type="range" min="4" max="24" step="1" value="12" />
+            <input id="paletteSize" type="range" min="4" max="30" step="1" value="18" />
           </div>
           <div class="control-group">
             <label for="saturation">色彩饱和度<span id="saturationValue"></span></label>
-            <input id="saturation" type="range" min="0.7" max="1.4" step="0.01" value="1" />
+            <input id="saturation" type="range" min="0.6" max="1.5" step="0.01" value="1" />
           </div>
           <div class="control-group">
             <label for="contrast">对比度<span id="contrastValue"></span></label>
-            <input id="contrast" type="range" min="0.8" max="1.4" step="0.01" value="1" />
+            <input id="contrast" type="range" min="0.8" max="1.6" step="0.01" value="1" />
           </div>
           <div class="control-group checkbox-row">
             <input id="showGrid" type="checkbox" checked />
-            <label for="showGrid">显示网格与编号</label>
+            <label for="showGrid">显示网格线</label>
+          </div>
+          <div class="control-group checkbox-row">
+            <input id="showCodes" type="checkbox" checked />
+            <label for="showCodes">色块内显示色号</label>
+          </div>
+          <div class="control-group checkbox-row">
+            <input id="mirrorPattern" type="checkbox" />
+            <label for="mirrorPattern">镜像图案（左右翻转）</label>
           </div>
           <div class="control-group checkbox-row">
             <input id="preserveEdges" type="checkbox" checked />
-            <label for="preserveEdges">保留边缘细节</label>
+            <label for="preserveEdges">增强边缘细节</label>
+          </div>
+          <div class="control-group">
+            <label>颜色替换</label>
+            <div class="color-adjust">
+              <select id="colorSourceSelect"></select>
+              <span class="arrow">→</span>
+              <select id="colorTargetSelect"></select>
+            </div>
+            <div class="actions-inline">
+              <button type="button" id="applyColorSwap">应用替换</button>
+              <button type="button" id="resetColorSwap">重置替换</button>
+            </div>
+            <p class="tip">选择需要替换的拼豆色号，再指定新的色号，可叠加多组替换。</p>
+            <div class="override-badges" id="overrideBadges"></div>
           </div>
           <div class="actions">
             <button id="regenerateBtn" class="primary">重新生成</button>
@@ -103,15 +125,15 @@
               <h2>3. 拼豆图纸</h2>
               <p id="summaryText">等待上传图片。</p>
             </div>
-            <div class="stat-chip" id="scaleChip">48 × 48</div>
+            <div class="stat-chip" id="scaleChip">- × -</div>
           </div>
-          <canvas id="outputCanvas" width="1024" height="1024"></canvas>
+          <canvas id="outputCanvas"></canvas>
           <div class="stats-grid" id="colorStats"></div>
         </section>
       </main>
 
       <footer class="footer card">
-        <p>默认输出为可打印拼豆图纸。建议先预览，再导出 PNG。</p>
+        <p>默认输出为可打印高清拼豆图纸，可通过色号替换功能调整配色。</p>
       </footer>
     </div>
   </body>
