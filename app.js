@@ -1,4 +1,9 @@
-﻿const fileInput = document.getElementById('fileInput');
+﻿const accessGate = document.getElementById('accessGate');
+const accessForm = document.getElementById('accessForm');
+const accessInput = document.getElementById('accessInput');
+const accessFeedback = document.getElementById('accessFeedback');
+const appShell = document.getElementById('appShell');
+const fileInput = document.getElementById('fileInput');
 const dropzone = document.getElementById('dropzone');
 const sourceCanvas = document.getElementById('sourceCanvas');
 const previewCanvas = document.getElementById('previewCanvas');
@@ -19,6 +24,12 @@ const gridWidthValue = document.getElementById('gridWidthValue');
 const paletteSizeValue = document.getElementById('paletteSizeValue');
 const saturationValue = document.getElementById('saturationValue');
 const contrastValue = document.getElementById('contrastValue');
+
+const STORAGE_KEY = 'peweb-access-token';
+const state = {
+  passwordHash: null,
+  bootstrapped: false,
+};
 
 const beads = {
   2: { sizeMm: 2, defaultWidth: 96, spacing: 1 },
@@ -111,33 +122,7 @@ function buildPalette(size) {
   return paletteWithLab.slice(0, size);
 }
 
-function resizeContainCanvas(ctx, source, targetWidth, targetHeight) {
-  ctx.clearRect(0, 0, targetWidth, targetHeight);
-  const ratio = Math.min(targetWidth / source.width, targetHeight / source.height);
-  const drawWidth = source.width * ratio;
-  const drawHeight = source.height * ratio;
-  const x = (targetWidth - drawWidth) / 2;
-  const y = (targetHeight - drawHeight) / 2;
-  ctx.drawImage(source, x, y, drawWidth, drawHeight);
-}
-
-function drawSourcePreview(image) {
-  sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-  sourceCtx.fillStyle = '#fff';
-  sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-  sourceCtx.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
-}
-
-function updateSliderLabels() {
-  gridWidthValue.textContent = `${gridWidth.value} 格`;
-  paletteSizeValue.textContent = `${paletteSize.value} 色`;
-  saturationValue.textContent = Number(saturation.value).toFixed(2);
-  contrastValue.textContent = Number(contrast.value).toFixed(2);
-  scaleChip.textContent = `${gridWidth.value} × ${Math.round((gridWidth.value * 1))}`;
-}
-
 function sampleImageData(image, cellsWide) {
-  const meta = beads[beadSize.value];
   const ratio = image.width / image.height;
   const cellsHigh = Math.max(1, Math.round(cellsWide / ratio));
   const offscreen = document.createElement('canvas');
@@ -145,13 +130,8 @@ function sampleImageData(image, cellsWide) {
   offscreen.height = cellsHigh;
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
-  const displayImage = document.createElement('canvas');
-  displayImage.width = image.width;
-  displayImage.height = image.height;
-  const displayCtx = displayImage.getContext('2d');
-  displayCtx.drawImage(image, 0, 0);
-  ctx.drawImage(displayImage, 0, 0, cellsWide, cellsHigh);
-  return { offscreen, cellsWide, cellsHigh, meta };
+  ctx.drawImage(image, 0, 0, cellsWide, cellsHigh);
+  return { offscreen, cellsWide, cellsHigh };
 }
 
 function nearestPaletteColor(rgb, swatches) {
@@ -176,7 +156,9 @@ function generateGrid(image, cellsWide) {
   const pixels = [];
   const counts = new Map();
   const sat = Number(saturation.value);
-  const con = Number(contrast.value);
+  const baseContrast = Number(contrast.value);
+  const edgeBoost = preserveEdges.checked ? 1.08 : 1;
+  const con = baseContrast * edgeBoost;
 
   for (let y = 0; y < cellsHigh; y += 1) {
     const row = [];
@@ -314,6 +296,21 @@ function renderOutput(grid) {
     const topItem = paletteWithLab.find((entry) => entry.id === top[0]);
     summaryText.textContent = `已生成 ${cellsWide} × ${cellsHigh} 格图纸，主色为 ${topItem.name}，共使用 ${sorted.length} 种拼豆色。`;
   }
+  scaleChip.textContent = `${cellsWide} × ${cellsHigh}`;
+}
+
+function drawSourcePreview(image) {
+  sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+  sourceCtx.fillStyle = '#fff';
+  sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+  sourceCtx.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
+}
+
+function updateSliderLabels() {
+  gridWidthValue.textContent = `${gridWidth.value} 格`;
+  paletteSizeValue.textContent = `${paletteSize.value} 色`;
+  saturationValue.textContent = Number(saturation.value).toFixed(2);
+  contrastValue.textContent = Number(contrast.value).toFixed(2);
 }
 
 function setWorkingImage(image) {
@@ -328,6 +325,9 @@ function regenerate() {
     sourceCtx.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+    summaryText.textContent = '等待上传图片。';
+    colorStats.innerHTML = '';
+    scaleChip.textContent = `${gridWidth.value} × ${gridWidth.value}`;
     return;
   }
   updateSliderLabels();
@@ -377,41 +377,133 @@ dropzone.addEventListener('drop', (event) => {
 
 regenerateBtn.addEventListener('click', regenerate);
 downloadBtn.addEventListener('click', () => {
+  if (!currentGrid) return;
   const link = document.createElement('a');
   link.download = 'pebeads-pattern.png';
   link.href = outputCanvas.toDataURL('image/png');
   link.click();
 });
 
-updateSliderLabels();
-summaryText.textContent = '等待上传图片。';
-previewCtx.fillStyle = '#ffffff';
-previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
-sourceCtx.fillStyle = '#ffffff';
-sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-outputCtx.fillStyle = '#ffffff';
-outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+function createDemoImage() {
+  const demo = document.createElement('canvas');
+  demo.width = 960;
+  demo.height = 720;
+  const demoCtx = demo.getContext('2d');
+  const gradient = demoCtx.createLinearGradient(0, 0, demo.width, demo.height);
+  gradient.addColorStop(0, '#ef4444');
+  gradient.addColorStop(0.3, '#f59e0b');
+  gradient.addColorStop(0.55, '#22c55e');
+  gradient.addColorStop(0.82, '#3b82f6');
+  gradient.addColorStop(1, '#8b5cf6');
+  demoCtx.fillStyle = gradient;
+  demoCtx.fillRect(0, 0, demo.width, demo.height);
+  demoCtx.fillStyle = 'rgba(255,255,255,0.92)';
+  demoCtx.beginPath();
+  demoCtx.arc(760, 180, 120, 0, Math.PI * 2);
+  demoCtx.fill();
+  demoCtx.fillStyle = '#111827';
+  demoCtx.font = 'bold 72px sans-serif';
+  demoCtx.fillText('Pe', 120, 220);
+  demoCtx.fillText('Web', 120, 300);
+  const demoImage = new Image();
+  demoImage.src = demo.toDataURL('image/png');
+  return demoImage;
+}
 
-const demo = document.createElement('canvas');
-demo.width = 960;
-demo.height = 720;
-const demoCtx = demo.getContext('2d');
-const gradient = demoCtx.createLinearGradient(0, 0, demo.width, demo.height);
-gradient.addColorStop(0, '#ef4444');
-gradient.addColorStop(0.3, '#f59e0b');
-gradient.addColorStop(0.55, '#22c55e');
-gradient.addColorStop(0.82, '#3b82f6');
-gradient.addColorStop(1, '#8b5cf6');
-demoCtx.fillStyle = gradient;
-demoCtx.fillRect(0, 0, demo.width, demo.height);
-demoCtx.fillStyle = 'rgba(255,255,255,0.92)';
-demoCtx.beginPath();
-demoCtx.arc(760, 180, 120, 0, Math.PI * 2);
-demoCtx.fill();
-demoCtx.fillStyle = '#111827';
-demoCtx.font = 'bold 72px sans-serif';
-demoCtx.fillText('Pe', 120, 220);
-demoCtx.fillText('Web', 120, 300);
-const demoImage = new Image();
-demoImage.onload = () => setWorkingImage(demoImage);
-demoImage.src = demo.toDataURL('image/png');
+function bootstrapApp() {
+  if (state.bootstrapped) return;
+  state.bootstrapped = true;
+  updateSliderLabels();
+  summaryText.textContent = '等待上传图片。';
+  previewCtx.fillStyle = '#ffffff';
+  previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+  sourceCtx.fillStyle = '#ffffff';
+  sourceCtx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+  outputCtx.fillStyle = '#ffffff';
+  outputCtx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+  const demoImage = createDemoImage();
+  demoImage.onload = () => setWorkingImage(demoImage);
+  if (demoImage.complete) {
+    setWorkingImage(demoImage);
+  }
+}
+
+function unlockAccess() {
+  document.body.classList.remove('locked');
+  accessGate.hidden = true;
+  appShell.hidden = false;
+  bootstrapApp();
+}
+
+function setFeedback(message, isError = false) {
+  accessFeedback.textContent = message;
+  if (isError) {
+    accessFeedback.classList.add('error');
+  } else {
+    accessFeedback.classList.remove('error');
+  }
+}
+
+async function loadPasswordConfig() {
+  if (state.passwordHash) return;
+  const response = await fetch('./password.json', { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error('密码配置加载失败');
+  }
+  const data = await response.json();
+  state.passwordHash = (data.passwordHash || '').trim().toLowerCase();
+  if (!state.passwordHash) {
+    throw new Error('未配置密码');
+  }
+}
+
+async function hashPassword(raw) {
+  const encoder = new TextEncoder();
+  const buffer = encoder.encode(raw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function attemptAutoUnlock() {
+  try {
+    await loadPasswordConfig();
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && saved === state.passwordHash) {
+      unlockAccess();
+      setFeedback('已自动验证访问权限。');
+      return true;
+    }
+  } catch (error) {
+    setFeedback(error.message, true);
+  }
+  return false;
+}
+
+accessForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const value = accessInput.value.trim();
+  if (!value) {
+    setFeedback('请输入密码。', true);
+    accessInput.focus();
+    return;
+  }
+  setFeedback('正在验证...');
+  try {
+    await loadPasswordConfig();
+    const hashed = await hashPassword(value);
+    if (hashed === state.passwordHash) {
+      localStorage.setItem(STORAGE_KEY, hashed);
+      setFeedback('校验成功，即将进入。');
+      unlockAccess();
+    } else {
+      setFeedback('密码错误，请核对后再试。', true);
+      accessInput.select();
+    }
+  } catch (error) {
+    setFeedback(error.message || '验证失败，请稍后重试。', true);
+  }
+});
+
+attemptAutoUnlock();

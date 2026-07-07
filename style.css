@@ -14,12 +14,15 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: radial-gradient(circle at top, #ffffff, var(--bg)); color: var(--text); font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 body { padding: 24px; }
+body.locked { height: 100vh; overflow: hidden; }
 button, input, select { font: inherit; }
 button { border: 0; border-radius: 14px; padding: 14px 18px; background: #e2e8f0; color: var(--text); cursor: pointer; transition: transform .15s ease, background .2s ease; }
 button:hover { transform: translateY(-1px); }
 button.primary { background: linear-gradient(135deg, var(--primary), var(--primary-strong)); color: white; box-shadow: 0 14px 28px rgba(37, 99, 235, 0.22); }
 button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+input[type="password"] { width: 100%; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(15, 23, 42, 0.12); background: white; }
 .app-shell { max-width: 1480px; margin: 0 auto; display: grid; gap: 20px; }
+.app-shell[hidden] { display: none !important; }
 .card { background: var(--panel); backdrop-filter: blur(18px); border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--shadow); }
 .hero { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 28px; }
 .eyebrow { margin: 0 0 6px; color: var(--primary); text-transform: uppercase; letter-spacing: .16em; font-size: 12px; font-weight: 700; }
@@ -57,6 +60,15 @@ select { width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid
 .stat-card strong { display: block; margin-bottom: 4px; }
 .stat-card span { color: var(--muted); font-size: 13px; }
 .footer { padding: 16px 22px; color: var(--muted); font-size: 14px; }
+.access-gate { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: radial-gradient(circle at top, rgba(248, 250, 252, 0.94), rgba(148, 163, 184, 0.4)); backdrop-filter: blur(22px); z-index: 999; }
+.access-gate[hidden] { display: none; }
+.access-card { width: min(420px, calc(100% - 48px)); padding: 36px; border-radius: 28px; background: var(--panel); border: 1px solid rgba(15, 23, 42, 0.12); box-shadow: 0 30px 80px rgba(15, 23, 42, 0.18); display: grid; gap: 20px; text-align: left; }
+.access-card h1 { font-size: 28px; }
+.access-card p { color: var(--muted); line-height: 1.6; }
+#accessForm { display: grid; gap: 14px; }
+#accessForm label { font-weight: 600; }
+.access-feedback { min-height: 22px; font-size: 14px; color: var(--muted); }
+.access-feedback.error { color: #ef4444; }
 @media (max-width: 1180px) {
   .layout { grid-template-columns: 1fr; }
   #outputCanvas { min-height: 520px; }
@@ -66,4 +78,5 @@ select { width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid
   .hero { flex-direction: column; align-items: start; }
   .image-preview-grid, .actions { grid-template-columns: 1fr; }
   .output-head { flex-direction: column; align-items: start; }
+  .access-card { padding: 28px; }
 }

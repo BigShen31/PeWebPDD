@@ -8,8 +8,20 @@
     <link rel="stylesheet" href="./style.css" />
     <script type="module" src="./app.js"></script>
   </head>
-  <body>
-    <div class="app-shell">
+  <body class="locked">
+    <div class="access-gate" id="accessGate" role="dialog" aria-modal="true">
+      <div class="access-card">
+        <h1>拼豆图片转换器</h1>
+        <p>请输入收到的访问密码，以继续使用网站。</p>
+        <form id="accessForm">
+          <label for="accessInput">访问密码</label>
+          <input id="accessInput" type="password" autocomplete="one-time-code" required placeholder="输入密码" />
+          <button class="primary" type="submit">进入</button>
+          <p class="access-feedback" id="accessFeedback" role="status"></p>
+        </form>
+      </div>
+    </div>
+    <div class="app-shell" id="appShell" hidden>
       <header class="hero card">
         <div>
           <p class="eyebrow">Pixel Art to Beads</p>
