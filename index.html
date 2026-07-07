@@ -1,0 +1,106 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="拼豆图片转换网站：上传图片后一键生成拼豆点阵图纸，支持像素化、色彩匹配与PNG导出。" />
+    <title>拼豆图纸转换器</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero card">
+        <div>
+          <p class="eyebrow">Pixel Art to Beads</p>
+          <h1>拼豆图片转换器</h1>
+          <p class="lead">上传图片，自动完成像素化、色彩映射、网格排版与 PNG 图纸导出，适合 2mm / 5mm 拼豆制作。</p>
+        </div>
+        <div class="hero-badges">
+          <span>拖拽上传</span>
+          <span>实时预览</span>
+          <span>高清导出</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel card upload-panel">
+          <h2>1. 上传图片</h2>
+          <label class="dropzone" id="dropzone" for="fileInput">
+            <input id="fileInput" type="file" accept="image/*" hidden />
+            <div>
+              <strong>点击选择或拖入图片</strong>
+              <p>支持 PNG、JPG、WEBP 等常见格式</p>
+            </div>
+          </label>
+
+          <div class="image-preview-grid">
+            <figure>
+              <figcaption>原图</figcaption>
+              <canvas id="sourceCanvas" width="360" height="360"></canvas>
+            </figure>
+            <figure>
+              <figcaption>拼豆预览</figcaption>
+              <canvas id="previewCanvas" width="360" height="360"></canvas>
+            </figure>
+          </div>
+        </section>
+
+        <aside class="panel card controls-panel">
+          <h2>2. 参数调节</h2>
+          <div class="control-group">
+            <label for="beadSize">拼豆规格</label>
+            <select id="beadSize">
+              <option value="5">5mm 常规</option>
+              <option value="2">2mm 微型</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="gridWidth">图纸宽度（格）<span id="gridWidthValue"></span></label>
+            <input id="gridWidth" type="range" min="24" max="128" step="1" value="48" />
+          </div>
+          <div class="control-group">
+            <label for="paletteSize">颜色数量<span id="paletteSizeValue"></span></label>
+            <input id="paletteSize" type="range" min="4" max="24" step="1" value="12" />
+          </div>
+          <div class="control-group">
+            <label for="saturation">色彩饱和度<span id="saturationValue"></span></label>
+            <input id="saturation" type="range" min="0.7" max="1.4" step="0.01" value="1" />
+          </div>
+          <div class="control-group">
+            <label for="contrast">对比度<span id="contrastValue"></span></label>
+            <input id="contrast" type="range" min="0.8" max="1.4" step="0.01" value="1" />
+          </div>
+          <div class="control-group checkbox-row">
+            <input id="showGrid" type="checkbox" checked />
+            <label for="showGrid">显示网格与编号</label>
+          </div>
+          <div class="control-group checkbox-row">
+            <input id="preserveEdges" type="checkbox" checked />
+            <label for="preserveEdges">保留边缘细节</label>
+          </div>
+          <div class="actions">
+            <button id="regenerateBtn" class="primary">重新生成</button>
+            <button id="downloadBtn">导出 PNG 图纸</button>
+          </div>
+        </aside>
+
+        <section class="panel card output-panel">
+          <div class="output-head">
+            <div>
+              <h2>3. 拼豆图纸</h2>
+              <p id="summaryText">等待上传图片。</p>
+            </div>
+            <div class="stat-chip" id="scaleChip">48 × 48</div>
+          </div>
+          <canvas id="outputCanvas" width="1024" height="1024"></canvas>
+          <div class="stats-grid" id="colorStats"></div>
+        </section>
+      </main>
+
+      <footer class="footer card">
+        <p>默认输出为可打印拼豆图纸。建议先预览，再导出 PNG。</p>
+      </footer>
+    </div>
+  </body>
+</html>
