@@ -219,6 +219,25 @@ input[type="range"] {
 .checkbox-row label {
   justify-content: flex-start;
 }
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  border: 2px solid white;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+  border: 2px solid white;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -419,3 +438,4 @@ input[type="range"] {
     padding: 28px;
   }
 }
+
