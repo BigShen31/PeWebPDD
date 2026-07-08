@@ -147,6 +147,25 @@ function getContrastColor(hex) {
   return brightness > 150 ? '#1f2937' : '#f8fafc';
 }
 
+function luminance(r, g, b) {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function sharpenRgb(rgb, amount) {
+  return {
+    r: clamp(Math.round(rgb.r + (rgb.r - 128) * amount), 0, 255),
+    g: clamp(Math.round(rgb.g + (rgb.g - 128) * amount), 0, 255),
+    b: clamp(Math.round(rgb.b + (rgb.b - 128) * amount), 0, 255),
+  };
+}
+
+function colorDistance(a, b) {
+  const dr = a.r - b.r;
+  const dg = a.g - b.g;
+  const db = a.b - b.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
 function setCanvasResolution(cellsWide, cellsHigh) {
   const baseCell = 38;
   const width = Math.max(2200, cellsWide * baseCell + 400);
@@ -246,13 +265,14 @@ function updateSliderLabels() {
 function sampleImageData(image, cellsWide) {
   const ratio = image.width / image.height;
   const cellsHigh = Math.max(1, Math.round(cellsWide / ratio));
+  const analysisScale = 6;
   const offscreen = document.createElement('canvas');
-  offscreen.width = cellsWide;
-  offscreen.height = cellsHigh;
+  offscreen.width = cellsWide * analysisScale;
+  offscreen.height = cellsHigh * analysisScale;
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(image, 0, 0, cellsWide, cellsHigh);
-  return { offscreen, cellsWide, cellsHigh };
+  ctx.drawImage(image, 0, 0, offscreen.width, offscreen.height);
+  return { offscreen, cellsWide, cellsHigh, analysisScale };
 }
 
 function nearestPaletteColor(rgb, swatches) {
@@ -271,22 +291,73 @@ function nearestPaletteColor(rgb, swatches) {
 
 function generateGrid(image, cellsWide) {
   const swatches = buildPalette(Number(paletteSize.value));
-  const { offscreen, cellsHigh } = sampleImageData(image, cellsWide);
+  const { offscreen, cellsHigh, analysisScale } = sampleImageData(image, cellsWide);
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
-  const data = ctx.getImageData(0, 0, cellsWide, cellsHigh).data;
+  const data = ctx.getImageData(0, 0, offscreen.width, offscreen.height).data;
   const pixels = Array.from({ length: cellsHigh }, () => new Array(cellsWide));
   const counts = new Map();
   const originalCounts = new Map();
   const sat = Number(saturation.value);
-  const con = Number(contrast.value) * (preserveEdges.checked ? 1.12 : 1);
+  const contrastBoost = Number(contrast.value) * (preserveEdges.checked ? 1.22 : 1);
+  const edgeEnhance = preserveEdges.checked ? 0.24 : 0;
+  const sharpenAmount = preserveEdges.checked ? 0.18 : 0;
+  const block = analysisScale;
+  const blockArea = block * block;
 
   for (let y = 0; y < cellsHigh; y += 1) {
     for (let x = 0; x < cellsWide; x += 1) {
-      const index = (y * cellsWide + x) * 4;
-      const r = applyTone(data[index], sat, con);
-      const g = applyTone(data[index + 1], sat, con);
-      const b = applyTone(data[index + 2], sat, con);
-      const chosen = nearestPaletteColor({ r, g, b }, swatches);
+      let sumR = 0;
+      let sumG = 0;
+      let sumB = 0;
+      let minL = 255;
+      let maxL = 0;
+      const startX = x * block;
+      const startY = y * block;
+
+      for (let by = 0; by < block; by += 1) {
+        for (let bx = 0; bx < block; bx += 1) {
+          const pxIndex = ((startY + by) * offscreen.width + (startX + bx)) * 4;
+          const r = data[pxIndex];
+          const g = data[pxIndex + 1];
+          const b = data[pxIndex + 2];
+          const lum = luminance(r, g, b);
+          sumR += r;
+          sumG += g;
+          sumB += b;
+          if (lum < minL) minL = lum;
+          if (lum > maxL) maxL = lum;
+        }
+      }
+
+      let rgb = {
+        r: sumR / blockArea,
+        g: sumG / blockArea,
+        b: sumB / blockArea,
+      };
+
+      if (preserveEdges.checked) {
+        const edgeStrength = clamp((maxL - minL) / 255, 0, 1);
+        const centerPixelIndex = ((startY + Math.floor(block / 2)) * offscreen.width + (startX + Math.floor(block / 2))) * 4;
+        const centerRgb = {
+          r: data[centerPixelIndex],
+          g: data[centerPixelIndex + 1],
+          b: data[centerPixelIndex + 2],
+        };
+        rgb = {
+          r: rgb.r * (1 - edgeEnhance) + centerRgb.r * edgeEnhance,
+          g: rgb.g * (1 - edgeEnhance) + centerRgb.g * edgeEnhance,
+          b: rgb.b * (1 - edgeEnhance) + centerRgb.b * edgeEnhance,
+        };
+        rgb = sharpenRgb(rgb, sharpenAmount * edgeStrength);
+      }
+
+      rgb = {
+        r: applyTone(rgb.r, sat, contrastBoost),
+        g: applyTone(rgb.g, sat, contrastBoost),
+        b: applyTone(rgb.b, sat, contrastBoost),
+      };
+
+      const chosen = nearestPaletteColor(rgb, swatches);
       originalCounts.set(chosen.id, (originalCounts.get(chosen.id) || 0) + 1);
       const overrideTarget = state.overrides.get(chosen.id);
       const effective = overrideTarget ?? chosen;
@@ -379,10 +450,10 @@ function renderOutput(grid) {
 
   const paddingX = 180;
   const paddingTop = 150;
-  const paddingBottom = 520;
+  const paddingBottom = 560;
   const innerWidth = width - paddingX * 2;
   const innerHeight = height - paddingTop - paddingBottom;
-  const cell = Math.floor(Math.min(innerWidth / cellsWide, innerHeight / cellsHigh));
+  const cell = Math.max(10, Math.floor(Math.min(innerWidth / cellsWide, innerHeight / cellsHigh)));
   const drawWidth = cell * cellsWide;
   const drawHeight = cell * cellsHigh;
   const offsetX = Math.floor((width - drawWidth) / 2);
@@ -396,6 +467,7 @@ function renderOutput(grid) {
   const mirrorLabel = mirrorPattern.checked ? ' · 已镜像' : '';
   outputCtx.fillText(`尺寸：${cellsWide} × ${cellsHigh} 格${mirrorLabel}`, paddingX, 138);
   outputCtx.fillText(`色号数量：${counts.size} 种`, paddingX, 174);
+  outputCtx.fillText(`模式：${showCodes.checked ? '显示色号' : '纯色块'} · ${showGrid.checked ? '显示网格' : '隐藏网格'}`, paddingX, 210);
 
   const codeFontSize = Math.max(18, Math.floor(cell * 0.44));
   outputCtx.font = `${codeFontSize}px "Inter", sans-serif`;
@@ -409,7 +481,7 @@ function renderOutput(grid) {
       const posY = offsetY + y * cell;
       outputCtx.fillStyle = color.hex;
       outputCtx.fillRect(posX, posY, cell, cell);
-      if (showCodes.checked && cell >= 24) {
+      if (showCodes.checked && cell >= 18) {
         outputCtx.fillStyle = getContrastColor(color.hex);
         outputCtx.fillText(color.id, posX + cell / 2, posY + cell / 2 + 1);
       }
@@ -693,3 +765,4 @@ accessForm.addEventListener('submit', async (event) => {
 });
 
 attemptAutoUnlock();
+
