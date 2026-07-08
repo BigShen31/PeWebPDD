@@ -270,12 +270,13 @@ function updateSliderLabels() {
 function sampleImageData(image, cellsWide) {
   const ratio = image.width / image.height;
   const cellsHigh = Math.max(1, Math.round(cellsWide / ratio));
-  const analysisScale = 6;
+  const analysisScale = 8;
   const offscreen = document.createElement('canvas');
   offscreen.width = cellsWide * analysisScale;
   offscreen.height = cellsHigh * analysisScale;
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
   ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(image, 0, 0, offscreen.width, offscreen.height);
   return { offscreen, cellsWide, cellsHigh, analysisScale };
 }
@@ -294,88 +295,79 @@ function nearestPaletteColor(rgb, swatches) {
   return chosen;
 }
 
-function generateGrid(image, cellsWide) {
-  const swatches = buildPalette(Number(paletteSize.value));
-  const { offscreen, cellsHigh, analysisScale } = sampleImageData(image, cellsWide);
-  const ctx = offscreen.getContext('2d', { willReadFrequently: true });
-  const data = ctx.getImageData(0, 0, offscreen.width, offscreen.height).data;
-  const pixels = Array.from({ length: cellsHigh }, () => new Array(cellsWide));
-  const counts = new Map();
-  const originalCounts = new Map();
-  const sat = Number(saturation.value);
-  const detailStrength = Number(edgeDetail.value);
-  const contrastBoost = Number(contrast.value) * (preserveEdges.checked ? 1.22 : 1);
-  const edgeEnhance = preserveEdges.checked ? 0.24 * detailStrength : 0;
-  const sharpenAmount = preserveEdges.checked ? 0.18 * detailStrength : 0;
-  const block = analysisScale;
-  const blockArea = block * block;
+function countRegionEdge(data, width, x0, y0, size) {
+  let minL = 255;
+  let maxL = 0;
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = ((y0 + y) * width + (x0 + x)) * 4;
+      const lum = luminance(data[index], data[index + 1], data[index + 2]);
+      if (lum < minL) minL = lum;
+      if (lum > maxL) maxL = lum;
+    }
+  }
+  return clamp((maxL - minL) / 255, 0, 1);
+}
 
-  for (let y = 0; y < cellsHigh; y += 1) {
-    for (let x = 0; x < cellsWide; x += 1) {
-      let sumR = 0;
-      let sumG = 0;
-      let sumB = 0;
-      let minL = 255;
-      let maxL = 0;
-      const startX = x * block;
-      const startY = y * block;
+function analyzeRegion(data, width, x0, y0, size) {
+  const samples = [];
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  const centerX = x0 + Math.floor(size / 2);
+  const centerY = y0 + Math.floor(size / 2);
+  let center = null;
 
-      for (let by = 0; by < block; by += 1) {
-        for (let bx = 0; bx < block; bx += 1) {
-          const pxIndex = ((startY + by) * offscreen.width + (startX + bx)) * 4;
-          const r = data[pxIndex];
-          const g = data[pxIndex + 1];
-          const b = data[pxIndex + 2];
-          const lum = luminance(r, g, b);
-          sumR += r;
-          sumG += g;
-          sumB += b;
-          if (lum < minL) minL = lum;
-          if (lum > maxL) maxL = lum;
-        }
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const index = ((y0 + y) * width + (x0 + x)) * 4;
+      const rgb = { r: data[index], g: data[index + 1], b: data[index + 2] };
+      samples.push(rgb);
+      sumR += rgb.r;
+      sumG += rgb.g;
+      sumB += rgb.b;
+      if (x0 + x === centerX && y0 + y === centerY) {
+        center = rgb;
       }
-
-      let rgb = {
-        r: sumR / blockArea,
-        g: sumG / blockArea,
-        b: sumB / blockArea,
-      };
-
-      if (preserveEdges.checked || subjectPriority.checked || edgeLock.checked) {
-        const edgeStrength = clamp((maxL - minL) / 255, 0, 1);
-        const lockBoost = edgeLock.checked ? clamp(1 + edgeStrength * 0.8, 1, 1.8) : 1;
-        const subjectBoost = subjectPriority.checked ? clamp(1 - (Math.abs(x - cellsWide / 2) / (cellsWide / 2)), 0.15, 1) : 1;
-        const centerPixelIndex = ((startY + Math.floor(block / 2)) * offscreen.width + (startX + Math.floor(block / 2))) * 4;
-        const centerRgb = {
-          r: data[centerPixelIndex],
-          g: data[centerPixelIndex + 1],
-          b: data[centerPixelIndex + 2],
-        };
-        rgb = {
-          r: rgb.r * (1 - edgeEnhance) + centerRgb.r * edgeEnhance,
-          g: rgb.g * (1 - edgeEnhance) + centerRgb.g * edgeEnhance,
-          b: rgb.b * (1 - edgeEnhance) + centerRgb.b * edgeEnhance,
-        };
-        rgb = sharpenRgb(rgb, sharpenAmount * edgeStrength * subjectBoost * lockBoost);
-      }
-
-      rgb = {
-        r: applyTone(rgb.r, sat, contrastBoost),
-        g: applyTone(rgb.g, sat, contrastBoost),
-        b: applyTone(rgb.b, sat, contrastBoost),
-      };
-
-      const chosen = nearestPaletteColor(rgb, swatches);
-      originalCounts.set(chosen.id, (originalCounts.get(chosen.id) || 0) + 1);
-      const overrideTarget = state.overrides.get(chosen.id);
-      const effective = overrideTarget ?? chosen;
-      const drawX = mirrorPattern.checked ? cellsWide - x - 1 : x;
-      pixels[y][drawX] = effective;
-      counts.set(effective.id, (counts.get(effective.id) || 0) + 1);
     }
   }
 
-  return { pixels, cellsWide, cellsHigh, counts, originalCounts };
+  const avg = { r: sumR / samples.length, g: sumG / samples.length, b: sumB / samples.length };
+  return {
+    avg,
+    center: center || avg,
+    edge: countRegionEdge(data, width, x0, y0, size),
+    samples,
+  };
+}
+
+function chooseRegionColor(region, swatches) {
+  const votes = new Map();
+  const register = (rgb, weight) => {
+    const chosen = nearestPaletteColor(rgb, swatches);
+    const luminanceBias = Math.abs(luminance(rgb.r, rgb.g, rgb.b) - luminance(chosen.rgb.r, chosen.rgb.g, chosen.rgb.b));
+    votes.set(chosen.id, (votes.get(chosen.id) || 0) + weight + luminanceBias / 255);
+  };
+
+  register(region.avg, 0.45);
+  register(region.center, 0.35);
+
+  if (region.edge > 0.16) {
+    const darkest = region.samples.reduce((min, current) => (luminance(current.r, current.g, current.b) < luminance(min.r, min.g, min.b) ? current : min), region.samples[0]);
+    const brightest = region.samples.reduce((max, current) => (luminance(current.r, current.g, current.b) > luminance(max.r, max.g, max.b) ? current : max), region.samples[0]);
+    register(darkest, 0.12);
+    register(brightest, 0.08);
+  }
+
+  let winnerId = swatches[0].id;
+  let winnerScore = -Infinity;
+  for (const [id, score] of votes.entries()) {
+    if (score > winnerScore) {
+      winnerScore = score;
+      winnerId = id;
+    }
+  }
+  return paletteMap.get(winnerId) || swatches[0];
 }
 
 function renderMiniPreview(grid) {
@@ -475,7 +467,7 @@ function renderOutput(grid) {
   const mirrorLabel = mirrorPattern.checked ? ' · 已镜像' : '';
   outputCtx.fillText(`尺寸：${cellsWide} × ${cellsHigh} 格${mirrorLabel}`, paddingX, 138);
   outputCtx.fillText(`色号数量：${counts.size} 种`, paddingX, 174);
-  outputCtx.fillText(`模式：${showCodes.checked ? '显示色号' : '纯色块'} · ${showGrid.checked ? '显示网格' : '隐藏网格'}`, paddingX, 210);
+  outputCtx.fillText(`模式：${showCodes.checked ? '显示色号' : '纯色块'} · ${showGrid.checked ? '显示网格' : '隐藏网格'} · ${subjectPriority.checked ? '人物优先' : '通用'} · ${edgeLock.checked ? '边缘锁定' : '普通'}`, paddingX, 210);
 
   const codeFontSize = Math.max(18, Math.floor(cell * 0.44));
   outputCtx.font = `${codeFontSize}px "Inter", sans-serif`;
@@ -552,7 +544,7 @@ function regenerate() {
   renderMiniPreview(grid);
   renderOutput(grid);
   const total = [...grid.counts.values()].reduce((acc, value) => acc + value, 0);
-  summaryText.textContent = `已生成 ${grid.cellsWide} × ${grid.cellsHigh} 格超清拼豆图，使用 ${colorCount} 种色号，共 ${total} 颗拼豆。`;
+  summaryText.textContent = `已生成 ${grid.cellsWide} × ${grid.cellsHigh} 格超清拼豆图，使用 ${colorCount} 种色号，共 ${total} 颗拼豆。边界会优先保持，人物优先模式已${subjectPriority.checked ? '开启' : '关闭'}，边缘锁定已${edgeLock.checked ? '开启' : '关闭'}。`;
   renderOverrideBadges(grid);
 }
 
@@ -773,6 +765,9 @@ accessForm.addEventListener('submit', async (event) => {
 });
 
 attemptAutoUnlock();
+
+
+
 
 
 
