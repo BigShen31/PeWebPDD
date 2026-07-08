@@ -290,81 +290,47 @@ function nearestPaletteColor(rgb, swatches) {
   return chosen;
 }
 
-function countRegionEdge(data, width, x0, y0, size) {
-  let minL = 255;
-  let maxL = 0;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const index = ((y0 + y) * width + (x0 + x)) * 4;
-      const lum = luminance(data[index], data[index + 1], data[index + 2]);
-      if (lum < minL) minL = lum;
-      if (lum > maxL) maxL = lum;
+function generateGrid(image, cellsWide) {
+  const swatches = buildPalette(Number(paletteSize.value));
+  const ratio = image.width / image.height;
+  const cellsHigh = Math.max(1, Math.round(cellsWide / ratio));
+  const offscreen = document.createElement('canvas');
+  offscreen.width = cellsWide;
+  offscreen.height = cellsHigh;
+  const ctx = offscreen.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(image, 0, 0, cellsWide, cellsHigh);
+
+  const imageData = ctx.getImageData(0, 0, cellsWide, cellsHigh).data;
+  const pixels = Array.from({ length: cellsHigh }, () => new Array(cellsWide));
+  const counts = new Map();
+  const originalCounts = new Map();
+  const sat = Number(saturation.value);
+  const contrastBoost = Number(contrast.value) * (preserveEdges.checked ? 1.15 : 1);
+
+  for (let y = 0; y < cellsHigh; y += 1) {
+    for (let x = 0; x < cellsWide; x += 1) {
+      const index = (y * cellsWide + x) * 4;
+      let r = imageData[index];
+      let g = imageData[index + 1];
+      let b = imageData[index + 2];
+
+      r = applyTone(r, sat, contrastBoost);
+      g = applyTone(g, sat, contrastBoost);
+      b = applyTone(b, sat, contrastBoost);
+
+      const chosen = nearestPaletteColor({ r, g, b }, swatches);
+      originalCounts.set(chosen.id, (originalCounts.get(chosen.id) || 0) + 1);
+
+      const overrideTarget = state.overrides.get(chosen.id);
+      const effective = overrideTarget ?? chosen;
+      pixels[y][x] = effective;
+      counts.set(effective.id, (counts.get(effective.id) || 0) + 1);
     }
   }
-  return clamp((maxL - minL) / 255, 0, 1);
+
+  return { pixels, cellsWide, cellsHigh, counts, originalCounts };
 }
-
-function analyzeRegion(data, width, x0, y0, size) {
-  const samples = [];
-  let sumR = 0;
-  let sumG = 0;
-  let sumB = 0;
-  const centerX = x0 + Math.floor(size / 2);
-  const centerY = y0 + Math.floor(size / 2);
-  let center = null;
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const index = ((y0 + y) * width + (x0 + x)) * 4;
-      const rgb = { r: data[index], g: data[index + 1], b: data[index + 2] };
-      samples.push(rgb);
-      sumR += rgb.r;
-      sumG += rgb.g;
-      sumB += rgb.b;
-      if (x0 + x === centerX && y0 + y === centerY) {
-        center = rgb;
-      }
-    }
-  }
-
-  const avg = { r: sumR / samples.length, g: sumG / samples.length, b: sumB / samples.length };
-  return {
-    avg,
-    center: center || avg,
-    edge: countRegionEdge(data, width, x0, y0, size),
-    samples,
-  };
-}
-
-function chooseRegionColor(region, swatches) {
-  const votes = new Map();
-  const register = (rgb, weight) => {
-    const chosen = nearestPaletteColor(rgb, swatches);
-    const luminanceBias = Math.abs(luminance(rgb.r, rgb.g, rgb.b) - luminance(chosen.rgb.r, chosen.rgb.g, chosen.rgb.b));
-    votes.set(chosen.id, (votes.get(chosen.id) || 0) + weight + luminanceBias / 255);
-  };
-
-  register(region.avg, 0.45);
-  register(region.center, 0.35);
-
-  if (region.edge > 0.16) {
-    const darkest = region.samples.reduce((min, current) => (luminance(current.r, current.g, current.b) < luminance(min.r, min.g, min.b) ? current : min), region.samples[0]);
-    const brightest = region.samples.reduce((max, current) => (luminance(current.r, current.g, current.b) > luminance(max.r, max.g, max.b) ? current : max), region.samples[0]);
-    register(darkest, 0.12);
-    register(brightest, 0.08);
-  }
-
-  let winnerId = swatches[0].id;
-  let winnerScore = -Infinity;
-  for (const [id, score] of votes.entries()) {
-    if (score > winnerScore) {
-      winnerScore = score;
-      winnerId = id;
-    }
-  }
-  return paletteMap.get(winnerId) || swatches[0];
-}
-
 function renderMiniPreview(grid) {
   const { pixels, cellsWide, cellsHigh } = grid;
   const width = previewCanvas.width;
