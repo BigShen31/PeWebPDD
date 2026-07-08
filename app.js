@@ -428,7 +428,7 @@ function renderOutput(grid) {
   const mirrorLabel = mirrorPattern.checked ? ' · 已镜像' : '';
   outputCtx.fillText(`尺寸：${cellsWide} × ${cellsHigh} 格${mirrorLabel}`, paddingX, 138);
   outputCtx.fillText(`色号数量：${counts.size} 种`, paddingX, 174);
-  outputCtx.fillText(`模式：${showCodes.checked ? '显示色号' : '纯色块'} · ${showGrid.checked ? '显示网格' : '隐藏网格'} · ${subjectPriority.checked ? '人物优先' : '通用'} · ${edgeLock.checked ? '边缘锁定' : '普通'}`, paddingX, 210);
+  outputCtx.fillText(`模式：${showCodes.checked ? '显示色号' : '纯色块'} · ${showGrid.checked ? '显示网格' : '隐藏网格'}`, paddingX, 210);
 
   const codeFontSize = Math.max(18, Math.floor(cell * 0.44));
   outputCtx.font = `${codeFontSize}px "Inter", sans-serif`;
@@ -505,7 +505,7 @@ function regenerate() {
   renderMiniPreview(grid);
   renderOutput(grid);
   const total = [...grid.counts.values()].reduce((acc, value) => acc + value, 0);
-  summaryText.textContent = `已生成 ${grid.cellsWide} × ${grid.cellsHigh} 格超清拼豆图，使用 ${colorCount} 种色号，共 ${total} 颗拼豆。边界会优先保持，人物优先模式已${subjectPriority.checked ? '开启' : '关闭'}，边缘锁定已${edgeLock.checked ? '开启' : '关闭'}。`;
+  summaryText.textContent = `已生成 ${grid.cellsWide} × ${grid.cellsHigh} 格超清拼豆图，使用 ${colorCount} 种色号，共 ${total} 颗拼豆。`;
   renderOverrideBadges(grid);
 }
 
