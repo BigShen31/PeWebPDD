@@ -18,8 +18,6 @@ const showCodes = document.getElementById('showCodes');
 const mirrorPattern = document.getElementById('mirrorPattern');
 const preserveEdges = document.getElementById('preserveEdges');
 const edgeDetail = document.getElementById('edgeDetail');
-const subjectPriority = document.getElementById('subjectPriority');
-const edgeLock = document.getElementById('edgeLock');
 const colorSourceSelect = document.getElementById('colorSourceSelect');
 const colorTargetSelect = document.getElementById('colorTargetSelect');
 const applyColorSwapBtn = document.getElementById('applyColorSwap');
@@ -578,7 +576,7 @@ dropzone.addEventListener('drop', (event) => {
   handleFile(file);
 });
 
-[gridWidth, paletteSize, saturation, contrast, edgeDetail, beadSize, showGrid, showCodes, mirrorPattern, subjectPriority, edgeLock, preserveEdges].forEach((control) => {
+[gridWidth, paletteSize, saturation, contrast, beadSize, showGrid, showCodes, mirrorPattern, preserveEdges].forEach((control) => {
   control.addEventListener('input', () => {
     updateSliderLabels();
     if (workingImage) regenerate();
@@ -765,6 +763,7 @@ accessForm.addEventListener('submit', async (event) => {
 });
 
 attemptAutoUnlock();
+
 
 
 
