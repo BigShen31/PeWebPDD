@@ -17,7 +17,6 @@ const showGrid = document.getElementById('showGrid');
 const showCodes = document.getElementById('showCodes');
 const mirrorPattern = document.getElementById('mirrorPattern');
 const preserveEdges = document.getElementById('preserveEdges');
-const edgeDetail = document.getElementById('edgeDetail');
 const colorSourceSelect = document.getElementById('colorSourceSelect');
 const colorTargetSelect = document.getElementById('colorTargetSelect');
 const applyColorSwapBtn = document.getElementById('applyColorSwap');
@@ -32,7 +31,6 @@ const gridWidthValue = document.getElementById('gridWidthValue');
 const paletteSizeValue = document.getElementById('paletteSizeValue');
 const saturationValue = document.getElementById('saturationValue');
 const contrastValue = document.getElementById('contrastValue');
-const edgeDetailValue = document.getElementById('edgeDetailValue');
 
 const STORAGE_KEY = 'peweb-access-token';
 const overridesStorageKey = 'peweb-color-overrides';
@@ -262,7 +260,6 @@ function updateSliderLabels() {
   paletteSizeValue.textContent = `${paletteSize.value} 色`;
   saturationValue.textContent = Number(saturation.value).toFixed(2);
   contrastValue.textContent = Number(contrast.value).toFixed(2);
-  edgeDetailValue.textContent = Number(edgeDetail.value).toFixed(2);
 }
 
 function sampleImageData(image, cellsWide) {
@@ -763,6 +760,7 @@ accessForm.addEventListener('submit', async (event) => {
 });
 
 attemptAutoUnlock();
+
 
 
 
