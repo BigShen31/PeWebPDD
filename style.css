@@ -313,6 +313,12 @@ input[type="range"]::-moz-range-thumb {
 .override-badge button:hover {
   color: var(--primary-strong);
 }
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
 .output-panel {
   display: grid;
   gap: 16px;
@@ -438,4 +444,5 @@ input[type="range"]::-moz-range-thumb {
     padding: 28px;
   }
 }
+
 

@@ -19,6 +19,7 @@ const mirrorPattern = document.getElementById('mirrorPattern');
 const preserveEdges = document.getElementById('preserveEdges');
 const edgeDetail = document.getElementById('edgeDetail');
 const subjectPriority = document.getElementById('subjectPriority');
+const edgeLock = document.getElementById('edgeLock');
 const colorSourceSelect = document.getElementById('colorSourceSelect');
 const colorTargetSelect = document.getElementById('colorTargetSelect');
 const applyColorSwapBtn = document.getElementById('applyColorSwap');
@@ -302,6 +303,7 @@ function generateGrid(image, cellsWide) {
   const counts = new Map();
   const originalCounts = new Map();
   const sat = Number(saturation.value);
+  const detailStrength = Number(edgeDetail.value);
   const contrastBoost = Number(contrast.value) * (preserveEdges.checked ? 1.22 : 1);
   const edgeEnhance = preserveEdges.checked ? 0.24 * detailStrength : 0;
   const sharpenAmount = preserveEdges.checked ? 0.18 * detailStrength : 0;
@@ -339,8 +341,9 @@ function generateGrid(image, cellsWide) {
         b: sumB / blockArea,
       };
 
-      if (preserveEdges.checked || subjectPriority.checked) {
+      if (preserveEdges.checked || subjectPriority.checked || edgeLock.checked) {
         const edgeStrength = clamp((maxL - minL) / 255, 0, 1);
+        const lockBoost = edgeLock.checked ? clamp(1 + edgeStrength * 0.8, 1, 1.8) : 1;
         const subjectBoost = subjectPriority.checked ? clamp(1 - (Math.abs(x - cellsWide / 2) / (cellsWide / 2)), 0.15, 1) : 1;
         const centerPixelIndex = ((startY + Math.floor(block / 2)) * offscreen.width + (startX + Math.floor(block / 2))) * 4;
         const centerRgb = {
@@ -353,7 +356,7 @@ function generateGrid(image, cellsWide) {
           g: rgb.g * (1 - edgeEnhance) + centerRgb.g * edgeEnhance,
           b: rgb.b * (1 - edgeEnhance) + centerRgb.b * edgeEnhance,
         };
-        rgb = sharpenRgb(rgb, sharpenAmount * edgeStrength * subjectBoost);
+        rgb = sharpenRgb(rgb, sharpenAmount * edgeStrength * subjectBoost * lockBoost);
       }
 
       rgb = {
@@ -583,7 +586,7 @@ dropzone.addEventListener('drop', (event) => {
   handleFile(file);
 });
 
-[gridWidth, paletteSize, saturation, contrast, edgeDetail, beadSize, showGrid, showCodes, mirrorPattern, subjectPriority, preserveEdges].forEach((control) => {
+[gridWidth, paletteSize, saturation, contrast, edgeDetail, beadSize, showGrid, showCodes, mirrorPattern, subjectPriority, edgeLock, preserveEdges].forEach((control) => {
   control.addEventListener('input', () => {
     updateSliderLabels();
     if (workingImage) regenerate();
@@ -770,6 +773,9 @@ accessForm.addEventListener('submit', async (event) => {
 });
 
 attemptAutoUnlock();
+
+
+
 
 
 
